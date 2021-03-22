@@ -1,0 +1,9 @@
+r=2
+h=3
+g=9.81;
+area=pi*r^2;
+volume=area*h;
+density=1000;
+mass=density*volume;
+weight=mass*g
+weightKN=weight*10^-3
