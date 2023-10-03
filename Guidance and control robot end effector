@@ -1,0 +1,296 @@
+MATLAB code of the algorithm that enacts the control law for guidance and control of the end effector of a robot:
+
+clear
+clc
+close all
+
+
+kx = 0.125; % Gain of X
+ky = 0.125; % Gain of Y
+dt = 0.1;   % Time step between measurments
+
+a = 20;     % X
+b = 20;     % Y
+c = 20;     % Z
+d = 20;     % thetaX
+e = 20;     % thetaY 
+f = 20;     % thetaZ
+
+[fc,tfc] = c_param(a,b,c,d,e,f);   % Getting the pose for the C
+[ft,tft] = t_param(0,0,0,0,0,0);   % Getting the pose for the T
+[fa,tfa] = a_param(0,0,0,0,0,0);   % Getting the pose for the A
+[vRef,wRef] = diff(ft,tft,fa,tfa); % Getting the vRef and wRef
+[v,w] = diff(fc,tfc,fa,tfa);       % Getting V and W
+[R,axang,u,theta] = rotAxangUandTheta(w);  % Determining the R and axis angle and
+                                           % u and theta for the equations
+[X,Y,Z] = xyz(v,w);  % Getting the vectors X Y Z from the v w
+K = gain(kx,ky);     % Gain matrix
+ux = skew(u);        % Skew of u
+By = by(theta,ux);   % By formula given theta and skew U
+Az = Acalc(By,R);    % A matrix given z
+t = screwVelocity(Az,K,Z);  % Screw Velocity, [v,w]'
+T0 = initialPose(R,X);      % Initial pose of the system in the T0 form
+[v,w] = screwDisplacement(t,dt);  % Getting the displacement after 1 dt
+[exmap] = exponentMapping(v,w);   % Calculating the exponential map to get the next pose
+
+T = cell(1,1000);  % Initialising the pose value matrix
+T{1} = T0;         % T0 as the 1st value of the T matrix
+P = cell(1,1000);  % Initialising the position value matrix
+ang = cell(1,1000);% Initialising the angle value matrix
+tVals =  cell(1,1000); % Initialising the velocity value matrix
+ang{1} = [d,e,f];  % Storing the 1st value of the angle 
+P{1} = [a,b,c];    % Storing the 1st value of the position 
+tVals{1} = t;    % Storing the 1st value of the position 
+statusPos = [0 0 0];  % Status check initialisation
+statusAngle = [0 0 0];  % Status check initialisation
+
+%% For loop to get the other values of the pose
+for i=2:1000
+    [v,w] = screwDisplacement(t,dt);
+    [exmap] = exponentMapping(v,w);
+    T{i} = exmap*T0;
+    angles = rad2deg(tform2eul(T{i}));
+    
+    pos = tform2trvec(T{i});
+    
+    for j=1:3
+        % If the value of the position becomes 0, set the status to 1
+        % this will stop the value from changing 
+        if pos(j)<0   
+            statusPos(j) = 1;
+            pos(j) = 0;
+        end
+        if statusPos(j) == 1
+            pos(j) = 0;
+        end        
+    end
+    for j=1:3
+        % If the value of the position becomes 0, set the status to 1
+        % this will stop the value from changing 
+        if angles(j)<0   
+            statusAngle(j) = 1;
+            angles(j) = 0;
+        end
+        if statusAngle(j) == 1
+            angles(j) = 0;
+        end        
+    end
+    P{i} = pos;
+    ang{i} = angles;
+    pos; % To display the values to the command window
+    [fc,tfc] = c_param(pos(1),pos(2),pos(3),angles(1),angles(2),angles(3));
+    [v,w] = diff(fc,tfc,fa,tfa);
+    [R,axang,u,theta] = rotAxangUandTheta(w);
+    [X,Y,Z] = xyz(v,w);
+    ux = skew(u);
+    By = by(theta,ux);
+    Az = Acalc(By,R);
+    t = screwVelocity(Az,K,Z);
+    tVals{i} = t;
+    T0 = initialPose(R,X);
+end
+
+%% PLOT
+
+pv = {zeros(1,1000) zeros(1,1000) zeros(1,1000)};
+
+for i=1:1000
+    pv{1}(i) = P{i}(1);
+    pv{2}(i) = P{i}(2);
+    pv{3}(i) = P{i}(3);
+end
+
+hold on
+
+figure(1)
+plot(0:999,pv{1});
+plot(0:999,pv{2});
+plot(0:999,pv{3});
+legend('x','y','z')
+title("Position translation")
+hold off
+
+av = {zeros(1,1000) zeros(1,1000) zeros(1,1000)};
+
+for i=1:1000
+    av{1}(i) = P{i}(1);
+    av{2}(i) = P{i}(2);
+    av{3}(i) = P{i}(3);
+end
+
+hold on
+
+figure(1)
+plot(0:999,av{1});
+plot(0:999,av{2});
+plot(0:999,av{3});
+legend('θ','ϕ','ψ')
+title("Rotational translation")
+hold off
+
+
+tv = {zeros(1,1000) zeros(1,1000) zeros(1,1000) zeros(1,1000) zeros(1,1000) zeros(1,1000)};
+
+for i=1:1000
+    tv{1}(i) = tVals{i}(1);
+    tv{2}(i) = tVals{i}(2);
+    tv{3}(i) = tVals{i}(3);
+    tv{4}(i) = tVals{i}(4);
+    tv{5}(i) = tVals{i}(5);
+    tv{6}(i) = tVals{i}(6);
+end
+
+
+
+figure(3)
+hold on
+plot(0:999,tv{1});
+plot(0:999,tv{2});
+plot(0:999,tv{3});
+legend('vx','vy','vz')
+title("Translation Velocity")
+hold off
+
+figure(4)
+hold on
+plot(0:999,tv{4});
+plot(0:999,tv{5});
+plot(0:999,tv{6});
+legend('vtheta','vrho','vphi')
+title("Rotational Velocity")
+hold off
+
+figure(5)
+curve = animatedline('LineWidth',2);
+set(gca,'XLim',[-20 20],'YLim',[-20 20],'ZLim',[-20 20]);
+view(45,25);
+hold on;
+for i=1:1000
+    addpoints(curve,P{i}(1),P{i}(2),P{i}(3));
+    head = scatter3(P{i}(1),P{i}(2),P{i}(3),'filled','MarkerFaceColor','b');
+    %quiver3(zeros(3,1),zeros(3,1),zeros(3,1),[1;0;0],[0;1;0],[0;0;1]);
+    drawnow
+    pause(0.0001);
+    delete(head);
+end
+
+spreadfigures;
+%% REF
+
+A0 = [-skew(wRef) zeros(3);
+      zeros(3) zeros(3)];
+
+tRefC = [R'*vRef';
+         R'*wRef'];
+t19 = getT(Az,K,Z,A0,tRefC); 
+t19 = t19+tRefC;
+
+%% NEW t (19)
+
+function [t19] = getT(Az,K,z,A0,tRefC)
+    t19 = inv(Az)*(-K*z - A0*z)+ tRefC;
+end 
+
+
+
+
+%% EXMAP
+function [exmap] = exponentMapping(v,w)
+    theta = norm(w);
+    skW = skew(w);
+    V = ( eye(3) ) + (((1-cos(theta)) / theta^2)*skW) + ((theta - sin(theta))/theta^3)*(skW^2);
+    ew = ( eye(3) ) + (((sin(theta)) / theta)*skW) + ((1-cos(theta))/theta^2)*(skW^2);
+    exmap = [ew V*v;
+        zeros(1,3) 1];
+end
+
+%% Screw Displacement
+function [v,w] = screwDisplacement(t,dt)
+    t = t*dt;
+    v = [t(1,1) t(2,1) t(3,1)]';
+    w = [t(4,1) t(5,1) t(6,1)]';
+end
+
+%% Initial Pose calc
+function T0 = initialPose(R,X)
+    T0 = [R X;
+        zeros(1,3) 1];
+end
+
+%% Screw Velocity calc
+function t = screwVelocity(Az,K,Z)
+    t = -inv(Az)*K*Z;
+end
+
+%% A matrix calc
+function A = Acalc(By,R)
+    AzL = [eye(3) zeros(3);
+        zeros(3) By];
+
+    AzR = [R zeros(3);
+        zeros(3) R];
+    A = AzL*AzR;
+end
+
+%% By Calc
+function By = by(theta,ux)
+    By = cos(theta)*eye(3) - (sin(theta)/2) * ux^2 + ((1-cos(theta))/cos(theta))*ux^2;
+end
+
+%% Skew Matrix Calc
+function skewdMatrix = skew(x)
+    skewdMatrix =  [0 -x(3) x(2);   
+                    x(3) 0 -x(1);
+                    -x(2) x(1) 0];
+end
+
+%% Gain Calc
+function K = gain(kx,ky)
+    
+    K = [kx*eye(3) zeros(3);
+        zeros(3) ky*eye(3)];
+end
+
+%% Pose calc
+function [X,Y,Z] = xyz(dpos,dang)
+    X = [dpos(1),dpos(2),dpos(3)]';
+    Y = [sin(dang(1)),sin(dang(2)),sin(dang(3))]';
+    Z = [X',Y']';
+
+end
+
+%% Euler to roation matrix and axis representation
+function [R,axang,u,theta] = rotAxangUandTheta(dang)
+    R = eul2rotm(dang);
+    axang = rotm2axang(R);
+    u = [axang(1) axang(2) axang(3)]';
+    theta = axang(4);
+
+end
+
+%% Difference between positions and angles
+function [dpos, dang] = diff(fc,tfc,fa,tfa)
+    dang = [tfc(1)-tfa(1) tfc(2)-tfa(2) tfc(3)-tfa(3)];
+    dpos= [fc(1)-fa(1) fc(2)-fa(2) fc(3)-fa(3)];
+    
+end
+
+%% Camera inputs
+function [fc,tfc] = c_param(x,y,z,t,r,p)
+    fc = [x y z];
+    tfc = [deg2rad(t) deg2rad(r) deg2rad(p)] ;
+end
+
+%% Target inputs
+function [ft,tft] = t_param(x,y,z,t,r,p)
+    ft = [x y z];
+    tft = [deg2rad(t) deg2rad(r) deg2rad(p)] ;
+end
+
+%% Absolute inputs
+function [fa,tfa] = a_param(x,y,z,t,r,p)
+    fa = [x y z];
+    tfa = [deg2rad(t) deg2rad(r) deg2rad(p)] ;
+end
+
+
